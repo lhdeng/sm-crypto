@@ -43,7 +43,7 @@ function doDecrypt(encryptData, privateKey, cipherMode = 1) {
   privateKey = new BigInteger(privateKey, 16)
 
   const c1X = encryptData.substr(0, 64)
-  const c1Y = encryptData.substr(0 + c1X.length, 64)
+  const c1Y = encryptData.substr(c1X.length, 64)
   const c1Length = c1X.length + c1Y.length
 
   let c3 = encryptData.substr(c1Length, 64)
@@ -65,8 +65,7 @@ function doDecrypt(encryptData, privateKey, cipherMode = 1) {
   const isDecrypt = _.arrayToHex(c3_) === c3
 
   if (isDecrypt) {
-    const decryptData = _.arrayToUtf8(data)
-    return decryptData
+    return _.arrayToUtf8(data)
   } else {
     return ''
   }
@@ -75,6 +74,7 @@ function doDecrypt(encryptData, privateKey, cipherMode = 1) {
 /**
  * 签名
  */
+// eslint-disable-next-line complexity
 function doSignature(msg, privateKey, {
   pointPool, der, hash, publicKey, userId
 } = {}) {
@@ -93,6 +93,8 @@ function doSignature(msg, privateKey, {
   let k = null
   let r = null
   let s = null
+  let X = null
+  let Y = null
 
   do {
     do {
@@ -103,6 +105,9 @@ function doSignature(msg, privateKey, {
         point = getPoint()
       }
       k = point.k
+
+      X = point.x1
+      Y = point.y1
 
       // r = (e + x1) mod n
       r = e.add(point.x1).mod(n)
@@ -117,7 +122,11 @@ function doSignature(msg, privateKey, {
     return encodeDer(r, s)
   }
 
-  return _.leftPad(r.toString(16), 64) + _.leftPad(s.toString(16), 64)
+  const flag = X.compareTo(n)
+  // eslint-disable-next-line no-bitwise
+  const recovery = (!Y.isEven() ? 1 : 0) | (flag >= 0 ? 2 : 0)
+
+  return _.leftPad(r.toString(16), 64) + _.leftPad(s.toString(16), 64) + _.leftPad(recovery.toString(16), 2)
 }
 
 /**
@@ -139,7 +148,7 @@ function doVerifySignature(msg, signHex, publicKey, {der, hash, userId} = {}) {
     s = decodeDerObj.s
   } else {
     r = new BigInteger(signHex.substring(0, 64), 16)
-    s = new BigInteger(signHex.substring(64), 16)
+    s = new BigInteger(signHex.substring(64, 128), 16)
   }
 
   const PA = curve.decodePointHex(publicKey)
@@ -169,8 +178,7 @@ function doSm3Hash(hashHex, publicKey, userId = '1234567812345678') {
   const z = new SM3Digest().getZ(G, publicKey.substr(2, 128), userId)
   const zValue = _.hexToArray(_.arrayToHex(z).toString())
 
-  const p = hashHex
-  const pValue = _.hexToArray(p)
+  const pValue = _.hexToArray(hashHex)
 
   const hashData = new Array(smDigest.getDigestSize())
   smDigest.blockUpdate(zValue, 0, zValue.length)
@@ -199,6 +207,7 @@ function getPoint() {
 
   keypair.k = new BigInteger(keypair.privateKey, 16)
   keypair.x1 = PA.getX().toBigInteger()
+  keypair.y1 = PA.getY().toBigInteger()
 
   return keypair
 }
